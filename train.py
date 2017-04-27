@@ -25,7 +25,7 @@ BATCH_SIZE = 32
 STATE_HISTORY_LENGTH = 4
 UPDATE_FREQUENCY = 10000
 LEARNING_RATE = 0.00025
-INITIAL_EXPLORE = 1
+INITIAL_EXPLORE = 1.0
 FINAL_EXPLORE = 0.1
 GAMMA = 0.99
 RENDER = True
@@ -65,6 +65,7 @@ def start_game(env, mode):
         if terminal:
             observation = env.reset()
             prev_state = get_initial_state(observation)
+        print("Observing:%d", i)
     for epoch in range(1, EPOCH + 1):
         updates = 0
         loss = 0
@@ -112,8 +113,8 @@ def start_game(env, mode):
                     Q_target[i, A] = R + GAMMA * np.max(Q_S)
             loss += model.train_on_batch(input, Q_target)
             updates += 1
-            print("Epoch:" + epoch + ", updates:" + updates + ", memory_size:" + len(memory) + ", epsilon:" + epsilon)
-        print("total loss:" + loss + ", avg reward per epsiode: " + total_reward / count_episode)
+            print('Epoch: {}, updates: {}, memory_size: {}, epsilon: {}'.format(epoch, updates, len(memory), epsilon) )
+        print("total loss: {}, avg reward per epsiode: {}".format(loss, total_reward/count_episode))
         print("Now we save model")
         model.save_weights(str(epoch).join("-model.h5"), overwrite=True)
         with open(str(epoch).join("-model.json"), "w") as outfile:
