@@ -1,20 +1,18 @@
-import gym
-import tensorflow as tf
-import numpy as np
-import site
-import cv2
 import argparse
-import keras
-import random
-from keras.models import Sequential
-from keras.layers.convolutional import Conv2D, MaxPooling2D
-from keras.optimizers import Adam
-from keras.layers.core import Dense, Dropout, Activation, Flatten
-from collections import deque
 import json
+import random
+from collections import deque
+
+import gym
+import numpy as np
+import tensorflow as tf
+from keras.layers.convolutional import Conv2D
+from keras.layers.core import Dense, Activation, Flatten
+from keras.models import Sequential
+from keras.optimizers import Adam
+from skimage import transform
 
 # import universe
-NUM_ACTIONS = 0
 IMAGE_HEIGHT = 84
 IMAGE_WIDTG = 84
 IMAGE_CHANNEL = 3
@@ -28,15 +26,24 @@ LEARNING_RATE = 0.00025
 INITIAL_EXPLORE = 1.0
 FINAL_EXPLORE = 0.1
 GAMMA = 0.99
-RENDER = True
+RENDER = False
 N_EPOCH = 50000
 EPOCH = 100
+
+def rgb2gray(rgb):
+    r, g, b = rgb[:,:,0], rgb[:,:,1], rgb[:,:,2]
+    gray = 0.2989 * r + 0.5870 * g + 0.1140 * b
+    return gray
+
 def get_env(game_name):
     env = gym.make(game_name)
     return env
 def process_image(image):
-    image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-    image = cv2.resize(image, (80, 80), interpolation = cv2.INTER_LINEAR)
+    image = rgb2gray(image)
+    #image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+    image = transform.resize(image, (IMAGE_HEIGHT, IMAGE_WIDTG))
+    # image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+    #image = cv2.resize(image, (IMAGE_HEIGHT, IMAGE_WIDTG), interpolation = cv2.INTER_LINEAR)
     return image
 
 def get_initial_state(observation):
@@ -47,6 +54,8 @@ def get_initial_state(observation):
     return state
 
 def start_game(env, mode):
+    log = open('training.log', 'a')
+    NUM_ACTIONS = env.action_space.n
     if mode == 'train':
         model = build_model(NUM_ACTIONS)
         epsilon = INITIAL_EXPLORE
@@ -65,7 +74,10 @@ def start_game(env, mode):
         if terminal:
             observation = env.reset()
             prev_state = get_initial_state(observation)
-        print("Observing:%d", i)
+        print("Observing: {}".format(i))
+    model.save_weights("initial-model.h5", overwrite=True)
+    with open("initial-model.json", "w") as outfile:
+        json.dump(model.to_json(), outfile)
     for epoch in range(1, EPOCH + 1):
         updates = 0
         loss = 0
@@ -95,7 +107,7 @@ def start_game(env, mode):
                 prev_state = get_initial_state(observation)
                 count_episode += 1
             minibatch = random.sample(memory, BATCH_SIZE)
-            input = np.zeros(BATCH_SIZE, IMAGE_HEIGHT, IMAGE_WIDTG, STATE_HISTORY_LENGTH)
+            input = np.zeros((BATCH_SIZE, IMAGE_HEIGHT, IMAGE_WIDTG, STATE_HISTORY_LENGTH))
             Q_target = np.zeros((BATCH_SIZE, NUM_ACTIONS))
             for i in range(0, BATCH_SIZE):
                 S_t = minibatch[i][0]
@@ -113,12 +125,14 @@ def start_game(env, mode):
                     Q_target[i, A] = R + GAMMA * np.max(Q_S)
             loss += model.train_on_batch(input, Q_target)
             updates += 1
-            print('Epoch: {}, updates: {}, memory_size: {}, epsilon: {}'.format(epoch, updates, len(memory), epsilon) )
+            #print('Epoch: {}, updates: {}, memory_size: {}, epsilon: {}'.format(epoch, updates, len(memory), epsilon) )
         print("total loss: {}, avg reward per epsiode: {}".format(loss, total_reward/count_episode))
+        log.write("total loss: {}, avg reward per epsiode: {}\n".format(loss, total_reward/count_episode))
         print("Now we save model")
-        model.save_weights(str(epoch).join("-model.h5"), overwrite=True)
-        with open(str(epoch).join("-model.json"), "w") as outfile:
+        model.save_weights(str(epoch) + "-model.h5", overwrite=True)
+        with open(str(epoch) + "-model.json", "w") as outfile:
             json.dump(model.to_json(), outfile)
+    log.close()
 
 
 def get_next_state(prev_state, observation):
@@ -149,13 +163,12 @@ def main():
     parser.add_argument('-g', '--game', help='game name', required=True)
     args = vars(parser.parse_args())
     env = get_env(args['game'])
-    NUM_ACTIONS = env.action_space.n
     start_game(env, args['mode'])
 
 if __name__ == '__main__':
 
     config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
+    #config.gpu_options.allow_growth = True
     sess = tf.Session(config=config)
     from keras import backend as K
     K.set_session(sess)
