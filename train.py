@@ -2,7 +2,7 @@ import argparse
 import json
 import random
 from collections import deque
-
+import os
 import gym
 import numpy as np
 import tensorflow as tf
@@ -57,12 +57,13 @@ def process_image(image):
 
 
 def copy_model(model, num_actions):
-    model.save_weights("target_copy.h5", overwrite=True)
-    copy_model = build_model(num_actions)
-    copy_model.load_weights(file)
+    temp_file = "target_copy.h5"
+    model.save_weights(temp_file, overwrite=True)
+    copied_model = build_model(num_actions)
+    copied_model.load_weights(temp_file)
     optimizer = tf.train.RMSPropOptimizer(LEARNING_RATE, momentum=MOMENTUM, epsilon=MIN_GRAD)
-    copy_model.compile(loss='mse', optimizer=optimizer)
-    return copy_model()
+    copied_model.compile(loss='mse', optimizer=optimizer)
+    return copied_model
 
 def get_initial_state(observation, last_observation):
     observation = np.maximum(observation, last_observation)
@@ -103,13 +104,17 @@ def test_model(model, n_episode, env, epsilon):
         observation, reward, terminal, _ = env.step(action)
         total_reward += reward
         state = get_next_state(state, observation, last_observation)
-        env.render()
+        if RENDER:
+            env.render()
     avg_reward = total_reward / n_episode
     # print ("avg reward per episode: " + str(avg_reward))
     return avg_reward
 
 
 def start_game(mode, file, game):
+    save_dir = game
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
     env = get_env(game)
     NUM_ACTIONS = env.action_space.n
     model = build_model(NUM_ACTIONS)
@@ -153,8 +158,8 @@ def start_game(mode, file, game):
                 observation, _, _, _ = env.step(0)  # Do nothing
             prev_state = get_initial_state(observation, last_observation)
         print("Observing: {}".format(i))
-    model.save_weights("initial-model.h5", overwrite=True)
-    with open("initial-model.json", "w") as outfile:
+    model.save_weights(save_dir + "/initial-model.h5", overwrite=True)
+    with open(save_dir + "/initial-model.json", "w") as outfile:
         json.dump(model.to_json(), outfile)
     target_model = copy_model(model, NUM_ACTIONS)
     for epoch in range(1, EPOCH + 1):
@@ -219,8 +224,8 @@ def start_game(mode, file, game):
         with open('training.log', 'a') as log:
             log.write("total loss: {}, avg reward per epsiode: {}\n".format(loss, avg_reward))
         print("Now we save model")
-        model.save_weights(str(epoch) + "-model.h5", overwrite=True)
-        with open(str(epoch) + "-model.json", "w") as outfile:
+        model.save_weights(save_dir + "/" + str(epoch) + "-model.h5", overwrite=True)
+        with open(save_dir + "/" + str(epoch) + "-model.json", "w") as outfile:
             json.dump(model.to_json(), outfile)
 
 
