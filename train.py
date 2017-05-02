@@ -221,7 +221,7 @@ def start_game(mode, file, game):
             #     print('Epoch: {}, updates: {}, memory_size: {}, epsilon: {}, avg_reward: {}'.format(epoch, updates, len(memory), epsilon, avg_reward))
         avg_reward = test_model(model, TEST_EPISODE, get_env(game), TEST_EXPLORE)
         print("total loss: {}, avg reward per epsiode: {}".format(loss, avg_reward))
-        with open('training.log', 'a') as log:
+        with open(save_dir + "/" + 'training.log', 'a') as log:
             log.write("total loss: {}, avg reward per epsiode: {}\n".format(loss, avg_reward))
         print("Now we save model")
         model.save_weights(save_dir + "/" + str(epoch) + "-model.h5", overwrite=True)
