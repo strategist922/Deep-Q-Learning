@@ -204,9 +204,8 @@ def start_game(mode, file, game):
                 S_t1 = minibatch[i][3]
                 T = minibatch[i][4]
                 input[i] = S_t
-                predict = target_model.predict(S_t)
-                Q_target[i] = predict
-                Q_S = predict
+                Q_target[i] = model.predict(S_t)
+                Q_S = target_model.predict(S_t1)
                 if T:
                     Q_target[i, A] = R
                 else:
