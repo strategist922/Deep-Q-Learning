@@ -9,7 +9,7 @@ import tensorflow as tf
 from keras.layers.convolutional import Conv2D
 from keras.layers.core import Dense, Activation, Flatten
 from keras.models import Sequential
-from keras.optimizers import Adam
+from keras.optimizers import RMSprop
 from skimage import transform
 
 # import universe
@@ -25,10 +25,12 @@ UPDATE_FREQUENCY = 10000
 LEARNING_RATE = 0.00025
 INITIAL_EXPLORE = 1.0
 FINAL_EXPLORE = 0.1
+TEST_EXPLORE = 0.05
 GAMMA = 0.99
 RENDER = False
 N_EPOCH = 50000
 EPOCH = 100
+TEST_EPISODE = 30
 
 def rgb2gray(rgb):
     r, g, b = rgb[:,:,0], rgb[:,:,1], rgb[:,:,2]
@@ -52,13 +54,51 @@ def get_initial_state(observation):
     state = np.stack((grey_image, grey_image, grey_image, grey_image), axis=2)
     state = state.reshape(1, state.shape[0], state.shape[1], state.shape[2])
     return state
+def test_model(model, n_episode, env, epsilon):
+    observation = env.reset()
+    state = get_initial_state(observation)
+    n = 0
+    terminal = False
+    total_reward = 0
+    while True:
+        if terminal:
+            observation = env.reset()
+            state = get_initial_state(observation)
+            n += 1
+            print(str(n) + " episodes completed")
+            if n >= n_episode:
+                break
+        if random.random() <= epsilon:
+            action = env.action_space.sample()
+        else:
+            action_values = model.predict(state)
+            action = np.argmax(action_values)
+        observation, reward, terminal, _ = env.step(action)
+        total_reward += reward
+        state = get_next_state(state, observation)
+        if RENDER:
+            env.render()
+    avg_reward = total_reward / n_episode
+    return avg_reward
+    print ("avg reward per episode: " + str(avg_reward))
 
-def start_game(env, mode):
-    log = open('training.log', 'a')
+
+
+def start_game(mode, file, game):
+    env = get_env(game)
     NUM_ACTIONS = env.action_space.n
+    model = build_model(NUM_ACTIONS)
     if mode == 'train':
-        model = build_model(NUM_ACTIONS)
         epsilon = INITIAL_EXPLORE
+    elif mode == 'test':
+        epsilon = TEST_EXPLORE
+        print ("Now we load weight")
+        model.load_weights(file)
+        rmsprop = RMSprop(lr=LEARNING_RATE)
+        model.compile(loss='mse', optimizer=rmsprop)
+        print ("Weight load successfully, start testing")
+        test_model(model, TEST_EPISODE, env, epsilon)
+        return
     observation = env.reset()
     memory = deque()
     prev_state = get_initial_state(observation)
@@ -66,6 +106,10 @@ def start_game(env, mode):
     for i in range(REPLAY_START_SIZE):
         action = env.action_space.sample()
         observation, reward, terminal, _ = env.step(action)
+        if reward > 0:
+            reward = 1
+        elif reward < 0:
+            reward = -1
         if RENDER:
             env.render()
         next_state = get_next_state(prev_state, observation)
@@ -81,8 +125,6 @@ def start_game(env, mode):
     for epoch in range(1, EPOCH + 1):
         updates = 0
         loss = 0
-        count_episode = 0
-        total_reward = 0
         while (updates < N_EPOCH):
 
             if random.random() <= epsilon:
@@ -91,7 +133,6 @@ def start_game(env, mode):
                 action_values = model.predict(prev_state)
                 action = np.argmax(action_values)
             observation, reward, terminal, _ = env.step(action)
-            total_reward += reward
             if RENDER:
                 env.render()
             count_frame += 1
@@ -105,7 +146,6 @@ def start_game(env, mode):
             if terminal:
                 observation = env.reset()
                 prev_state = get_initial_state(observation)
-                count_episode += 1
             minibatch = random.sample(memory, BATCH_SIZE)
             input = np.zeros((BATCH_SIZE, IMAGE_HEIGHT, IMAGE_WIDTG, STATE_HISTORY_LENGTH))
             Q_target = np.zeros((BATCH_SIZE, NUM_ACTIONS))
@@ -125,14 +165,15 @@ def start_game(env, mode):
                     Q_target[i, A] = R + GAMMA * np.max(Q_S)
             loss += model.train_on_batch(input, Q_target)
             updates += 1
-            #print('Epoch: {}, updates: {}, memory_size: {}, epsilon: {}'.format(epoch, updates, len(memory), epsilon) )
-        print("total loss: {}, avg reward per epsiode: {}".format(loss, total_reward/count_episode))
-        log.write("total loss: {}, avg reward per epsiode: {}\n".format(loss, total_reward/count_episode))
+            print('Epoch: {}, updates: {}, memory_size: {}, epsilon: {}'.format(epoch, updates, len(memory), epsilon) )
+        avg_reward = test_model(model, TEST_EPISODE, get_env(game), TEST_EXPLORE)
+        print("total loss: {}, avg reward per epsiode: {}".format(loss, avg_reward))
+        with open('training.log', 'a') as log:
+            log.write("total loss: {}, avg reward per epsiode: {}\n".format(loss, avg_reward))
         print("Now we save model")
         model.save_weights(str(epoch) + "-model.h5", overwrite=True)
         with open(str(epoch) + "-model.json", "w") as outfile:
             json.dump(model.to_json(), outfile)
-    log.close()
 
 
 def get_next_state(prev_state, observation):
@@ -153,17 +194,17 @@ def build_model(num_actions):
     model.add(Flatten())
     model.add(Dense(512, activation='relu'))
     model.add(Dense(num_actions))
-    adam = Adam(lr=1e-6)
-    model.compile(loss='mse', optimizer=adam)
+    rmsprop = RMSprop(lr=LEARNING_RATE)
+    model.compile(loss='mse', optimizer=rmsprop)
     return model
 
 def main():
     parser = argparse.ArgumentParser(description='train/test an agent.')
     parser.add_argument('-m', '--mode', help='train/test', required=True)
     parser.add_argument('-g', '--game', help='game name', required=True)
+    parser.add_argument('-f', '--file', help='model file', required=True)
     args = vars(parser.parse_args())
-    env = get_env(args['game'])
-    start_game(env, args['mode'])
+    start_game(args['mode'], args['file'], args['game'])
 
 if __name__ == '__main__':
 
