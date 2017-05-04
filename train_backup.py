@@ -115,45 +115,6 @@ def test_model(model, n_episode, env, epsilon):
     print ("avg reward per episode: " + str(avg_reward))
     return avg_reward
 
-def record_model(model, n_episode, env, epsilon, save_dir):
-    env = gym.wrappers.Monitor(env, save_dir)
-    observation = env.reset()
-    last_observation = observation
-    state = get_initial_state(observation, last_observation)
-    for _ in range(random.randint(1, NO_OP_STEPS)):
-        last_observation = observation
-        observation, _, _, _ = env.step(0)  # Do nothing
-    n = 0
-    terminal = False
-    total_reward = 0
-    while True:
-        if terminal:
-            observation = env.reset()
-            for _ in range(random.randint(1, NO_OP_STEPS)):
-                last_observation = observation
-                observation, _, _, _ = env.step(0)  # Do nothing
-            state = get_initial_state(observation, last_observation)
-            n += 1
-            # print(str(n) + " episodes completed")
-            if n >= n_episode:
-                break
-        if random.random() <= epsilon:
-            action = env.action_space.sample()
-        else:
-            action_values = model.predict(state)
-            action = np.argmax(action_values)
-        last_observation = observation
-        observation, reward, terminal, _ = env.step(action)
-        total_reward += reward
-        state = get_next_state(state, observation, last_observation)
-        if RENDER:
-            env.render()
-    avg_reward = total_reward / n_episode
-    print ("avg reward per episode: " + str(avg_reward))
-    return avg_reward
-
-
-
 def start_game(mode, file, game):
     save_dir = game
     if not os.path.exists(save_dir):
