@@ -3,7 +3,7 @@ import json
 import random
 from collections import deque
 import os
-import gym
+import gym, keras
 import numpy as np
 import tensorflow as tf
 from keras.layers.convolutional import Conv2D
@@ -13,8 +13,9 @@ from skimage.transform import resize
 from skimage.color import rgb2gray
 
 
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
+# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
+# os.environ["CUDA_VISIBLE_DEVICES"] = ""
+
 
 
 # import universe
@@ -32,13 +33,14 @@ INITIAL_EXPLORE = 1.0
 FINAL_EXPLORE = 0.1
 TEST_EXPLORE = 0.05
 GAMMA = 0.99
-RENDER = True
+RENDER = False
 N_EPOCH = 50000
 EPOCH = 100
 TEST_EPISODE = 30
 NO_OP_STEPS = 30
 MOMENTUM = 0.95
 MIN_GRAD = 0.01
+OPTMIZER = keras.optimizers.RMSprop(lr=LEARNING_RATE, rho=MOMENTUM, epsilon=MIN_GRAD)
 
 
 # def rgb2gray(rgb):
@@ -66,8 +68,7 @@ def copy_model(model, num_actions):
     model.save_weights(temp_file, overwrite=True)
     copied_model = build_model(num_actions)
     copied_model.load_weights(temp_file)
-    optimizer = tf.train.RMSPropOptimizer(LEARNING_RATE, momentum=MOMENTUM, epsilon=MIN_GRAD)
-    copied_model.compile(loss='mse', optimizer=optimizer)
+    copied_model.compile(loss='mse', optimizer=OPTMIZER)
     return copied_model
 
 def get_initial_state(observation, last_observation):
@@ -116,7 +117,7 @@ def test_model(model, n_episode, env, epsilon):
     return avg_reward
 
 def record_model(model, n_episode, env, epsilon, save_dir):
-    env = gym.wrappers.Monitor(env, save_dir)
+    env = gym.wrappers.Monitor(env, save_dir, video_callable=lambda episode_id: True)
     observation = env.reset()
     last_observation = observation
     state = get_initial_state(observation, last_observation)
@@ -168,20 +169,19 @@ def start_game(mode, file, game):
         print ("Now we load weight")
         model.load_weights(file)
         # rmsprop = RMSprop(lr=LEARNING_RATE, epsilon = 0.01)
-        optimizer = tf.train.RMSPropOptimizer(LEARNING_RATE, momentum=MOMENTUM, epsilon=MIN_GRAD)
-        model.compile(loss='mse', optimizer=optimizer)
+        model.compile(loss='mse', optimizer=OPTMIZER)
         print ("Weight load successfully, start testing")
         test_model(model, TEST_EPISODE, env, epsilon)
         return
     elif mode =='record':
-    	epsilon = TEST_EXPLORE
+        epsilon = TEST_EXPLORE
         print ("Now we load weight")
         model.load_weights(file)
         # rmsprop = RMSprop(lr=LEARNING_RATE, epsilon = 0.01)
-        optimizer = tf.train.RMSPropOptimizer(LEARNING_RATE, momentum=MOMENTUM, epsilon=MIN_GRAD)
-        model.compile(loss='mse', optimizer=optimizer)
+        model.compile(loss='mse', optimizer=OPTMIZER)
         print ("Weight load successfully, start testing")
         record_model(model, TEST_EPISODE, env, epsilon, save_dir + "/results")
+        return
     observation = env.reset()
     last_observation = None
     for _ in range(random.randint(1, NO_OP_STEPS)):
@@ -255,7 +255,7 @@ def start_game(mode, file, game):
                 R = minibatch[i][2]
                 S_t1 = minibatch[i][3]
                 T = minibatch[i][4]
-                input[i] = S_t
+                input[i:i+1] = S_t
                 Q_target[i] = model.predict(S_t)
                 Q_S = target_model.predict(S_t1)
                 if T:
@@ -301,9 +301,10 @@ def build_model(num_actions):
     model.add(Flatten())
     model.add(Dense(512, activation='relu'))
     model.add(Dense(num_actions))
+
     # rmsprop = RMSprop(lr=LEARNING_RATE, epsilon=MIN_GRAD)
-    optimizer = tf.train.RMSPropOptimizer(LEARNING_RATE, momentum=MOMENTUM, epsilon=MIN_GRAD)
-    model.compile(loss='mse', optimizer=optimizer)
+    #optimizer = tf.train.RMSPropOptimizer(LEARNING_RATE, momentum=MOMENTUM, epsilon=MIN_GRAD)
+    model.compile(loss='mse', optimizer=OPTMIZER)
     return model
 
 
@@ -318,7 +319,7 @@ def main():
 
 if __name__ == '__main__':
     config = tf.ConfigProto()
-    # config.gpu_options.allow_growth = True
+    config.gpu_options.allow_growth = True
     sess = tf.Session(config=config)
     from keras import backend as K
 
